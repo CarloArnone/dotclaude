@@ -1,0 +1,8 @@
+{
+  "name": "dotclaude",
+  "owner": { "name": "Carlo Arnone" },
+  "metadata": { "description": "dotclaude: one Workspace pane for Claude Code (vitals, edit gate, plan review, ledger, companion, Mac monitor, notes, radar, Git, crew)." },
+  "plugins": [
+    { "name": "dotclaude", "source": "./mods/dotclaude", "description": "One Workspace pane: vitals rail plus edit gate, plan review, ledger, companion, Mac monitor, notes vault, radar, Git panel and crew." }
+  ]
+}

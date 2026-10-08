@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Monitor Preview</title>
+<style>
+:root{
+  --ink:#0f1722;          /* app background, slate ink */
+  --deck:#141e2b;         /* window body */
+  --well:#0b121b;         /* recessed wells: traces, inputs */
+  --plate:#1a2636;        /* raised plates */
+  --edge:rgba(160,190,230,.10);
+  --edge-strong:rgba(160,190,230,.18);
+  --text:#dbe6f3;
+  --muted:#7f93ab;
+  --faint:#4d5f75;
+  --ecg:#3ddc97;          /* activity channel */
+  --spo2:#4cc9f0;         /* context channel */
+  --resp:#f2c14e;         /* rate channel */
+  --nibp:#f072b6;         /* cost channel */
+  --alarm:#ff5a5f;
+  --ok:#3ddc97;
+  --num:'Barlow Condensed',sans-serif;
+  --ui:'Manrope',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --spring:cubic-bezier(.32,.72,0,1);
+}
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#18263a 0%,var(--ink) 60%);background-color:var(--ink);color:var(--text);font:14px/1.5 var(--ui);min-height:100dvh}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--spo2);outline-offset:2px}
+
+/* ── page chrome ── */
+.top{display:flex;align-items:center;gap:20px;padding:22px 28px 14px;flex-wrap:wrap}
+.top h1{margin:0;font:600 26px/1 var(--num);letter-spacing:.01em}
+.top p{margin:0;color:var(--muted);font-size:13px;text-wrap:pretty}
+.seg{display:inline-flex;padding:3px;border-radius:12px;background:var(--well);box-shadow:inset 0 0 0 1px var(--edge)}
+.seg button{border:0;background:none;padding:6px 12px;border-radius:9px;color:var(--muted);cursor:pointer;font-weight:600;font-size:12.5px;transition:background-color .2s var(--spring),color .2s var(--spring)}
+.seg button[aria-pressed="true"]{background:var(--plate);color:var(--text);box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 2px 8px rgba(0,0,0,.25)}
+.top .seg:last-child{margin-left:auto}
+.mods{padding:0 28px 18px}
+.mods .seg{flex-wrap:wrap}
+
+/* ── window ── */
+.stage{padding:0 28px 40px;display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:24px;max-width:1500px}
+@media(max-width:1100px){.stage{grid-template-columns:1fr}}
+.shell{padding:6px;border-radius:22px;background:rgba(160,190,230,.04);box-shadow:inset 0 0 0 1px var(--edge),0 30px 80px -20px rgba(0,0,0,.6)}
+.window{border-radius:16px;background:var(--deck);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--edge);color:var(--muted);font-size:12px}
+.lights{display:flex;gap:7px;margin-right:8px}.lights i{width:11px;height:11px;border-radius:50%;background:#2a3748}
+.body{display:flex;height:720px}
+.transcript{flex:1;min-width:0;display:flex;flex-direction:column;padding:18px 20px;gap:12px}
+.msg{color:var(--muted);text-wrap:pretty;max-width:62ch}
+.msg strong{color:var(--text);font-weight:600}
+.msg.you{color:var(--text);padding:8px 12px;border-radius:12px;background:var(--plate);align-self:flex-start}
+.tool{font:12px/1.5 var(--mono);color:var(--muted);padding:6px 10px;border-radius:8px;background:var(--well);align-self:flex-start}
+.tool b{color:var(--text);font-weight:600}
+.deny{border-left:2px solid var(--alarm);padding:8px 12px;border-radius:0 10px 10px 0;background:rgba(255,90,95,.07);align-self:stretch;max-width:62ch}
+.deny strong{color:#ffb3b5}
+.grow{flex:1}
+.composer{border-radius:14px;background:var(--well);box-shadow:inset 0 0 0 1px var(--edge);padding:12px 14px;color:var(--faint);display:flex;align-items:center;gap:10px}
+.composer span{flex:1}
+
+/* ── buttons ── */
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;padding:7px 14px;border-radius:999px;background:var(--plate);box-shadow:inset 0 0 0 1px var(--edge-strong);font-weight:600;font-size:12.5px;transition:transform .15s var(--spring),background-color .2s var(--spring),box-shadow .2s var(--spring)}
+.btn:hover{box-shadow:inset 0 0 0 1px rgba(160,190,230,.32)}
+.btn:active{transform:scale(.97)}
+.btn.go{background:var(--ecg);color:#06261a;box-shadow:none}
+.btn.go:hover{background:#56e7a8}
+.btn.stop{background:rgba(255,90,95,.14);color:#ffb3b5;box-shadow:inset 0 0 0 1px rgba(255,90,95,.35)}
+.btn.info{background:rgba(76,201,240,.14);color:#a8e6f8;box-shadow:inset 0 0 0 1px rgba(76,201,240,.35)}
+.btn .k{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.18);font-size:11px;transition:transform .2s var(--spring)}
+.btn:hover .k{transform:translate(1px,-1px)}
+
+/* ── mod pane ── */
+.pane{width:0;overflow:hidden;border-left:1px solid transparent;background:linear-gradient(180deg,#172231,#141e2b);transition:width .45s var(--spring),border-color .3s}
+.pane.open{width:380px;border-left-color:var(--edge)}
+.pane-inner{width:380px;height:100%;display:flex;flex-direction:column}
+.pane-head{display:flex;align-items:center;gap:10px;padding:14px 16px 10px}
+.pane-head h2{margin:0;font:600 19px/1 var(--num);letter-spacing:.01em;flex:1}
+.pane-body{padding:4px 16px 16px;display:flex;flex-direction:column;gap:12px;overflow:auto;flex:1}
+.x{border:0;background:none;color:var(--muted);cursor:pointer;width:32px;height:32px;border-radius:8px;font-size:18px}
+.x:hover{background:var(--plate)}
+.sub{color:var(--muted);font-size:12.5px;text-wrap:pretty}
+.block{border-radius:12px;background:var(--well);box-shadow:inset 0 0 0 1px var(--edge);padding:12px}
+.block h3{margin:0 0 6px;font-size:13px;font-weight:700}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.doc h4{margin:10px 0 4px;font:600 15px var(--num);color:var(--spo2);letter-spacing:.02em}
+.doc ul{margin:0;padding-left:18px;color:var(--text);font-size:13px}
+.doc code{font:12px var(--mono);background:var(--plate);padding:1px 5px;border-radius:5px}
+textarea.in,input.in{width:100%;resize:none;border:0;border-radius:10px;background:var(--well);box-shadow:inset 0 0 0 1px var(--edge);color:var(--text);padding:9px 11px;font:13px var(--ui)}
+.ledger-item{display:grid;grid-template-columns:44px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--edge)}
+.ledger-item:first-child{border-top:0}
+.ledger-item time{font:500 15px var(--num);color:var(--muted);font-variant-numeric:tabular-nums}
+.ledger-item .f{font-weight:700}
+.add{color:var(--ecg);font:600 13px var(--num)}.del{color:var(--alarm);font:600 13px var(--num)}
+.flag{color:var(--resp)}
+.state{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12px;padding:3px 10px;border-radius:999px}
+.state.ok{color:var(--ecg);background:rgba(61,220,151,.12)}
+.state.warn{color:var(--resp);background:rgba(242,193,78,.12)}
+.state.lock{color:#c7b8ff;background:rgba(167,139,250,.14)}
+.state i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.idea{border-radius:12px;background:var(--well);box-shadow:inset 0 0 0 1px var(--edge);padding:12px;display:flex;flex-direction:column;gap:8px}
+.idea h3{margin:0;font-size:14px}
+.kind{font-size:11.5px;font-weight:700;color:var(--muted)}
+.meter{display:grid;grid-template-columns:90px 1fr 54px;gap:10px;align-items:center}
+.meter span:first-child{color:var(--muted);font-size:12.5px}
+.meter b{font:600 18px var(--num);text-align:right;font-variant-numeric:tabular-nums}
+.meter canvas{width:100%;height:28px;border-radius:6px;background:var(--well)}
+.companion{flex:1;display:none;flex-direction:column;background:#eef1f5;color:#1a2433;border-left:1px solid var(--edge)}
+.companion.open{display:flex}
+.companion .url{padding:8px 12px;font:11.5px var(--mono);color:#5a6a80;background:#e1e6ed;border-bottom:1px solid #cfd6df}
+.companion .page{padding:22px;display:flex;flex-direction:column;gap:14px}
+.companion h3{margin:0;font:600 24px var(--num)}
+.tl{display:flex;align-items:center;gap:0}
+.tl .n{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:#44546b;min-width:90px}
+.tl .n i{width:12px;height:12px;border-radius:50%;background:#1f9d6b;box-shadow:0 0 0 4px rgba(31,157,107,.15)}
+.tl .n.w i{background:#c48a12;box-shadow:0 0 0 4px rgba(196,138,18,.15)}
+.tl .ln{flex:1;height:2px;background:#cdd5df;margin-bottom:22px}
+
+/* ── vitals rail (M0) ── */
+.rail{width:300px;flex:none;overflow:auto;border-left:1px solid var(--edge);background:#0d151f;display:flex;flex-direction:column}
+.rail-head{padding:14px 16px 12px;border-bottom:1px solid var(--edge);display:flex;flex-direction:column;gap:6px}
+.proj{display:flex;align-items:baseline;gap:8px}
+.proj b{font:600 22px/1 var(--num);letter-spacing:.01em}
+.proj .branch{color:var(--muted);font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.proj .dirty{width:6px;height:6px;border-radius:50%;background:var(--resp)}
+.meta{display:flex;gap:12px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.meta b{color:var(--text);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.ch{position:relative;padding:10px 16px 10px;border-bottom:1px solid var(--edge);display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 40px auto;column-gap:12px;transition:background-color .3s}
+.ch .lbl{font:600 14px var(--num);letter-spacing:.02em;color:var(--c)}
+.ch .val{grid-row:1/3;grid-column:2;align-self:end;font:600 40px/1 var(--num);color:var(--c);font-variant-numeric:tabular-nums;text-align:right;min-width:86px}
+.ch .val small{font-size:18px;margin-left:1px}
+.ch canvas{grid-column:1;width:100%;height:40px;display:block}
+.ch .foot{grid-column:1/3;display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums;margin-top:4px}
+.ch .foot b{color:var(--text);font-weight:600}
+.ch.alarm{background:rgba(255,90,95,.08);--c:var(--alarm)!important}
+.ch.alarm::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--alarm);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.rail-foot{margin-top:auto;padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--edge)}
+.dock{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px 16px}
+.dock button{border:0;cursor:pointer;border-radius:10px;padding:8px 4px;background:var(--plate);box-shadow:inset 0 0 0 1px var(--edge);color:var(--muted);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .15s var(--spring),color .2s,box-shadow .2s}
+.dock button:active{transform:scale(.96)}
+.dock button[aria-pressed="true"]{color:var(--text);box-shadow:inset 0 0 0 1px var(--spo2)}
+.dock svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.4}
+
+/* ── terminal skin ── */
+.term .window{border-radius:10px;background:#0c1118}
+.term .body,.term .transcript,.term .pane,.term .rail{font-family:var(--mono);font-size:12.5px}
+.term .msg.you{background:none;padding:0}.term .msg.you::before{content:"> ";color:var(--ecg)}
+.term .composer{border-radius:0;box-shadow:none;border-top:1px solid var(--edge);background:none}
+.term .composer::before{content:">";color:var(--ecg)}
+.term .rail canvas,.term .pane canvas{display:none}
+.term .spark{display:block!important}
+.spark{display:none;grid-column:1;font:18px/40px var(--mono);color:var(--c);white-space:nowrap;overflow:hidden;letter-spacing:0}
+.term .ch .val{font-family:var(--mono);font-size:26px}
+.term .btn,.term .dock button,.term .block,.term .idea,.term .state{border-radius:4px}
+.term .dock button{font-family:var(--mono)}
+.term .meter .spark{grid-column:2;line-height:28px}
+
+/* ── side notes ── */
+aside{display:flex;flex-direction:column;gap:14px}
+.note{border-radius:16px;background:rgba(160,190,230,.04);box-shadow:inset 0 0 0 1px var(--edge);padding:16px}
+.note h2{margin:0 0 8px;font:600 20px var(--num)}
+.note ul{margin:0;padding-left:18px;color:var(--muted);font-size:13px}
+.note li{margin:4px 0;text-wrap:pretty}
+.note li b{color:var(--text)}
+.note code{font:11.5px var(--mono);color:#a8e6f8}
+
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,12px);opacity:0;padding:10px 16px;border-radius:999px;background:var(--plate);box-shadow:inset 0 0 0 1px var(--edge-strong),0 12px 30px rgba(0,0,0,.4);font-weight:600;font-size:13px;transition:opacity .2s var(--spring),transform .3s var(--spring);pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Session monitor</h1>
+  <p>Interactive mockup of the mod suite. Buttons behave as planned; data is simulated.</p>
+  <div class="seg" role="group" aria-label="Surface">
+    <button aria-pressed="true" data-surface="desk">Desktop app</button>
+    <button aria-pressed="false" data-surface="term">Terminal</button>
+  </div>
+</div>
+<div class="mods"><div class="seg" id="modbar" role="group" aria-label="Mod"></div></div>
+
+<div class="stage">
+  <div class="shell" id="shell">
+    <div class="window">
+      <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span><span id="wtitle">Claude</span></div>
+      <div class="body">
+        <section class="transcript" id="transcript"></section>
+        <section class="companion" id="companion">
+          <div class="url">localhost:4747 / companion</div>
+          <div class="page">
+            <h3>Ledger timeline</h3>
+            <div class="tl"><div class="n"><i></i>21:02 client.ts</div><div class="ln"></div><div class="n"><i></i>21:05 tests</div><div class="ln"></div><div class="n w"><i></i>21:06 README</div></div>
+            <p style="margin:0;color:#4a5a70;font-size:13px;max-width:52ch">When a picture beats text (diagrams, plans, timelines, charts), Claude renders it here instead of the chat.</p>
+          </div>
+        </section>
+        <section class="pane" id="pane"><div class="pane-inner"><div class="pane-head"><h2 id="paneTitle"></h2><button class="x" aria-label="Close pane" onclick="closePane()">×</button></div><div class="pane-body" id="paneBody"></div></div></section>
+        <section class="rail" aria-label="Vitals">
+          <div class="rail-head">
+            <div class="proj"><b>my-project</b><span class="branch"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="4" cy="3" r="1.6"/><circle cx="4" cy="13" r="1.6"/><circle cx="12" cy="6" r="1.6"/><path d="M4 4.6v6.8M12 7.6c0 3-8 2-8 3.8"/></svg>feat/sync-retry<i class="dirty" title="uncommitted changes"></i></span></div>
+            <div class="meta"><span><b>Opus 5.5</b></span><span>session <b id="age">42m</b></span><span id="clock">21:14</span></div>
+            <div class="chips" id="chips"></div>
+          </div>
+          <div class="ch" id="ch-act" style="--c:var(--ecg)"><span class="lbl">Activity</span><span class="val" id="v-act">87</span><canvas data-ch="act"></canvas><span class="spark" data-sp="act"></span><div class="foot"><span>tool calls</span><span><b id="v-bpm">12</b> per min</span></div></div>
+          <div class="ch" id="ch-ctx" style="--c:var(--spo2)"><span class="lbl">Context</span><span class="val"><span id="v-ctx">62</span><small>%</small></span><canvas data-ch="ctx"></canvas><span class="spark" data-sp="ctx"></span><div class="foot"><span><b id="v-tok">124k</b> of 200k</span><span>burn <b id="v-burn">+4%</b> per msg</span></div></div>
+          <div class="ch" id="ch-rate" style="--c:var(--resp)"><span class="lbl">Rate limit, 5h</span><span class="val"><span id="v-rate">46</span><small>%</small></span><canvas data-ch="rate"></canvas><span class="spark" data-sp="rate"></span><div class="foot"><span>resets in <b id="v-reset">1:12:00</b></span><span>7 days <b>23%</b></span></div></div>
+          <div class="ch" id="ch-cost" style="--c:var(--nibp)"><span class="lbl">Cost</span><span class="val" id="v-cost">$7.40</span><canvas data-ch="cost"></canvas><span class="spark" data-sp="cost"></span><div class="foot"><span>last call <b>18k</b> in, <b>2k</b> out</span><span>real</span></div></div>
+          <div class="dock" id="dock"></div>
+          <div class="rail-foot" id="railFoot"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <aside id="notes"></aside>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const toast = t => { const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(toast.h); toast.h=setTimeout(()=>el.classList.remove('show'),2400); };
+
+const S = { surface:'desk', mod:'hud', gate:'locked', ctx:62, plan:'pending', brain:0, radar:false, companion:false, tools:87 };
+
+const ICON = {
+  gate:'<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  plan:'<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/></svg>',
+  ledger:'<svg viewBox="0 0 24 24"><path d="M5 5h14M5 10h14M5 15h9M5 20h6"/></svg>',
+  mac:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="11" rx="2"/><path d="M9 20h6M12 16v4"/></svg>',
+  brain:'<svg viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></svg>',
+  radar:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12l6-6"/></svg>',
+  comp:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>',
+  hud:'<svg viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
+};
+
+const MODS = {
+  hud:{label:'Vitals', title:'Vitals rail (M0)', pane:null,
+    chat:()=>`<div class="msg you">Fix the flaky cache invalidation</div>
+      <div class="tool">Read <b>Cache.ts</b></div>
+      <div class="msg">The cache key ignores the locale, so stale entries are served. Including it in the key.</div>
+      <div class="tool">Grep <b>cacheKey</b> in src/</div>
+      <div class="row"><button class="btn" onclick="bump(14)">Simulate long turn</button><button class="btn" onclick="bump(-100)">Reset context</button></div>`,
+    notes:`<h2>Vitals rail</h2><ul><li><b>Same content as statusline.sh:</b> path, branch, dirty state, age, clock, model, health, context, burn, caveman mode, last call, 5h and 7d limits, tool count, cost.</li><li><b>Side rail</b> instead of above the prompt. Each metric is a monitor channel with a live trace.</li><li><b>Activity</b> spikes once per tool call, like a heartbeat.</li><li><b>Alarm:</b> context at 80% or more turns the channel red and shows a Compact button.</li><li>Cost and limits come from <code>$.session.usage()</code>, live through <code>session.measure</code>. statusline.sh stays as the fallback.</li></ul>`},
+  gate:{label:'Gate', title:'Gate keeper (M1)', pane:'gate',
+    chat:()=>`<div class="msg you">Add a retry backoff to the API client</div>
+      <div class="msg">Proposal: exponential backoff from 0.5 s to 8 s, six attempts, reset on a clean connection. Approve to start.</div>
+      ${S.gate==='locked'?`<div class="deny"><strong>Edit blocked</strong><div class="sub">Edit on src/api/client.ts was stopped because the session is still brainstorming. Say "approved", "go ahead" or "GO", or press Approve.</div></div>`:`<div class="tool">Edit <b>src/api/client.ts</b> <span class="add">+24</span> <span class="del">−3</span></div>`}`,
+    notes:`<h2>Gate keeper</h2><ul><li>Blocks <b>Edit, Write and NotebookEdit</b> only. Bash stays free.</li><li>Unlocks on "approved", "go ahead", "proceed", "GO" (in capitals), or the Approve button.</li><li>Approving a plan in Plan review also unlocks.</li><li>State shows as a chip in the vitals rail.</li></ul>`},
+  plan:{label:'Plan review', title:'Plan review (M2)', pane:'plan',
+    chat:()=>`<div class="tool">Write <b>docs/plans/api-backoff.md</b></div>
+      <div class="block"><h3>Plan ready for your review</h3><div class="sub">api-backoff.md, 4 sections</div><div class="row" style="margin-top:8px"><button class="btn go" onclick="openPane('plan')">Review plan <span class="k">↗</span></button><button class="btn" onclick="openCompanion()">Open in companion</button></div></div>`,
+    notes:`<h2>Plan review</h2><ul><li>Triggers when Claude writes a plan or spec (docs/plans, specs, superpowers plans) or leaves plan mode.</li><li>A card appears in the chat. <b>Review plan</b> opens the plan rendered in a side pane inside the app.</li><li><b>Approve</b> unlocks the gate. <b>Request changes</b> sends your comment as the next message.</li></ul>`},
+  ledger:{label:'Ledger', title:'Ledger (M4)', pane:'ledger',
+    chat:()=>`<div class="tool">Edit <b>src/api/client.ts</b></div><div class="tool">Write <b>tests/client.test.ts</b></div><div class="tool">Edit <b>README.md</b></div><div class="msg">Backoff in place, three tests pass.</div>`,
+    notes:`<h2>Ledger</h2><ul><li>Every Edit or Write is recorded with file, lines changed, time and <b>why</b>. Haiku summarises the reason from Claude's last message and the diff.</li><li>Stored per project in <code>.claude/ledger.md</code>.</li><li>Flags files that weren't in the approved plan.</li><li>Drafts a commit message from the entries.</li></ul>`},
+  mac:{label:'Mac', title:'Mac monitor (M6)', pane:'mac',
+    chat:()=>`<div class="msg you">Build the app</div><div class="tool">Bash <b>npm run build</b></div><div class="msg">Compiling 412 actions…</div>`,
+    notes:`<h2>Mac monitor</h2><ul><li>Samples every 5 s with <code>top</code>, <code>memory_pressure</code>, <code>pmset</code>, <code>df</code> and <code>docker ps</code>.</li><li>Stopping a container or ending a process always asks first.</li><li>No GPU reading: it needs <code>sudo powermetrics</code>.</li></ul>`},
+  brain:{label:'Brain', title:'Notes (M8)', pane:'brain',
+    chat:()=>`<div class="msg you">Ok, we keep the 8 s cap for all API clients</div><div class="msg">Noted. Backoff merged and tested against staging.</div>`,
+    notes:`<h2>Notes vault</h2><ul><li>Live view of the vault: inbox, today's daily note, recent notes, search. Links open in Obsidian.</li><li><b>Capture</b> starts an independent scribe agent that reads the session and keeps what matters.</li><li>When unsure, it asks you with buttons, then writes following your vault's conventions.</li></ul>`},
+  radar:{label:'Radar', title:'Radar (M9)', pane:'radar',
+    chat:()=>`<div class="msg you">Draft the release notes for version 2.3</div><div class="msg">Added: offline sync. Fixed: stale cache after locale change…</div>`,
+    notes:`<h2>Radar</h2><ul><li>Two lists: <b>skills</b> to create, and <b>mods or agents</b> to create.</li><li>Runs only when you press Scan.</li><li>Reads Claude Code session transcripts and your vault. Chats on claude.ai aren't stored on this Mac, so it can't see them.</li><li><b>Draft</b> starts an agent that brainstorms it with you and saves the result in dotclaude.</li></ul>`},
+  comp:{label:'Companion', title:'Companion (M10)', pane:null,
+    chat:()=>`<div class="msg you">Show me today's edits as a timeline</div>
+      <div class="msg">${S.companion?'Drawn in the companion.':'The companion is closed. Open it and I will draw it there.'}</div>
+      <div class="row"><button class="btn ${S.companion?'':'info'}" onclick="openCompanion()">${S.companion?'Close companion':'Open companion'}</button></div>`,
+    notes:`<h2>Companion</h2><ul><li><b>Open companion</b> or <code>/companion</code> opens the built-in browser pane on a local page served by the mod.</li><li>While it's open, the mod adds a rule to Claude's system prompt: visual answers go to the companion.</li><li>Plan review, Ledger and Radar get an "Open in companion" button.</li><li><b>To verify:</b> whether a mod can open the browser pane directly. Fallback: the button asks Claude to open it.</li></ul>`},
+};
+
+const PANES = {
+  gate:()=>`<div class="row"><span class="state ${S.gate==='locked'?'lock':'ok'}"><i></i>${S.gate==='locked'?'Brainstorming, edits locked':'Approved, edits open'}</span></div>
+    <p class="sub">Phase follows your words: approval unlocks, "back to brainstorm" locks again.</p>
+    <div class="row">${S.gate==='locked'?`<button class="btn go" onclick="setGate('open')">Approve <span class="k">✓</span></button>`:`<button class="btn" onclick="setGate('locked')">Back to brainstorm</button>`}</div>`,
+  plan:()=>`<div class="row"><span class="state ${S.plan==='ok'?'ok':S.plan==='changes'?'warn':'lock'}"><i></i>${S.plan==='ok'?'Approved':S.plan==='changes'?'Changes requested':'Waiting for you'}</span></div>
+    <div class="doc"><h4>Goal</h4><ul><li>Retry the API client without flooding the server.</li></ul><h4>Changes</h4><ul><li><code>client.ts</code>: add a <code>Backoff</code> type</li><li><code>client.test.ts</code>: cap, reset, jitter</li></ul><h4>Verification</h4><ul><li><code>xcodebuild test</code>, then a manual drop test on the bench unit</li></ul></div>
+    <textarea class="in" rows="2" placeholder="Comment for Claude (optional)"></textarea>
+    ${S.plan==='pending'?`<div class="row"><button class="btn go" onclick="S.plan='ok';setGate('open');render();toast('Plan approved, edits unlocked')">Approve <span class="k">✓</span></button><button class="btn stop" onclick="S.plan='changes';render();toast('Comment sent to Claude')">Request changes</button></div>`:`<button class="btn" onclick="S.plan='pending';render()">Reset demo</button>`}`,
+  ledger:()=>`<p class="sub">.claude/ledger.md in this project</p>
+    <div class="block" style="padding:4px 12px">
+      <div class="ledger-item"><time>21:02</time><div><div class="f">client.ts <span class="add">+24</span> <span class="del">−3</span></div><div class="sub">Added exponential backoff so retries stop flooding the server.</div></div></div>
+      <div class="ledger-item"><time>21:05</time><div><div class="f">client.test.ts <span class="add">+41</span></div><div class="sub">Covers cap, reset and jitter.</div></div></div>
+      <div class="ledger-item"><time>21:06</time><div><div class="f flag">README.md <span class="add">+2</span></div><div class="sub"><span class="flag">Not in the approved plan.</span> Documented the new retry setting.</div></div></div>
+    </div>
+    <div class="row"><button class="btn go" onclick="toast('Commit message drafted from 3 entries')">Draft commit message</button><button class="btn" onclick="toast('Saved to notes')">Save to brain</button><button class="btn" onclick="openCompanion()">Timeline</button></div>`,
+  mac:()=>`<div class="block" style="display:flex;flex-direction:column;gap:10px">
+      <div class="meter" style="--c:var(--ecg)"><span>CPU</span><canvas data-ch="cpu"></canvas><span class="spark" data-sp="cpu"></span><b id="m-cpu">85%</b></div>
+      <div class="meter" style="--c:var(--resp)"><span>Memory</span><canvas data-ch="mem"></canvas><span class="spark" data-sp="mem"></span><b id="m-mem">67%</b></div>
+      <div class="meter" style="--c:var(--spo2)"><span>Disk</span><canvas data-ch="disk"></canvas><span class="spark" data-sp="disk"></span><b>71%</b></div>
+      <div class="meter" style="--c:var(--nibp)"><span>Battery</span><canvas data-ch="bat"></canvas><span class="spark" data-sp="bat"></span><b>54%</b></div>
+    </div>
+    <div class="block"><h3>Heaviest processes</h3><div class="sub">node 212%, Xcode 80%, Safari 22%</div><div class="row" style="margin-top:8px"><button class="btn stop" onclick="toast('Asks before ending node (pid 8812)')">End process…</button></div></div>
+    <div class="block"><h3>Docker</h3><div class="sub">web-dev, up 3 h. postgres, up 1 day.</div><div class="row" style="margin-top:8px"><button class="btn" onclick="toast('Asks before stopping web-dev')">Stop…</button><button class="btn" onclick="toast('Tailing web-dev logs')">Logs</button></div></div>
+    <p class="sub">Thermal state nominal. GPU needs sudo, so it isn't shown.</p>`,
+  brain:()=>`<input class="in" placeholder="Search the vault">
+    <div class="block"><h3>Inbox</h3><div class="sub">API backoff decision, 2 min ago<br>Release notes, yesterday</div></div>
+    <div class="block"><h3>Today</h3><div class="sub">daily/2026-10-07, 3 captures</div></div>
+    ${[`<button class="btn go" onclick="S.brain=1;render();setTimeout(()=>{if(S.brain===1){S.brain=2;render()}},1600)">Capture this session <span class="k">+</span></button>`,
+       `<div class="block"><h3>Scribe is reading the session…</h3><div class="sub">Extracting decisions, facts and open questions.</div></div>`,
+       `<div class="block" style="box-shadow:inset 0 0 0 1px rgba(167,139,250,.45)"><h3>The scribe has a question</h3><div class="sub">Is the 8 s backoff cap a rule for all your API work, or specific to this project?</div><div class="row" style="margin-top:8px"><button class="btn" onclick="S.brain=3;render();toast('Saved to notes/API Patterns.md')">All API work</button><button class="btn" onclick="S.brain=3;render();toast('Saved to notes/Project Sync.md')">This project only</button></div></div>`,
+       `<div class="block"><h3 style="color:var(--ecg)">Saved</h3><div class="sub">notes/API Patterns.md, linked from [[Reading list]]</div><div class="row" style="margin-top:8px"><button class="btn" onclick="S.brain=0;render()">Capture again</button></div></div>`][S.brain]}`,
+  radar:()=>S.radar?`<p class="sub">From 34 sessions and your vault.</p>
+    <div class="idea"><span class="kind">Skill</span><h3>Release notes</h3><div class="sub">You wrote release notes by hand on 3 Oct and a changelog today. One skill could draft both from the commits.</div><div class="row"><button class="btn go" onclick="toast('Agent starts a brainstorm for the skill')">Draft</button><button class="btn">Later</button><button class="btn">Dismiss</button></div></div>
+    <div class="idea"><span class="kind">Mod</span><h3>One-click deploy</h3><div class="sub">You ran <code>npm run deploy</code> by hand in 7 sessions.</div><div class="row"><button class="btn go" onclick="toast('Agent starts a brainstorm for the mod')">Draft</button><button class="btn">Later</button><button class="btn">Dismiss</button></div></div>
+    <div class="idea"><span class="kind">Agent</span><h3>Build log reader</h3><div class="sub">CI logs were pasted in 5 sessions.</div><div class="row"><button class="btn go">Draft</button><button class="btn">Later</button><button class="btn">Dismiss</button></div></div>`
+    :`<p class="sub">Scans your Claude Code sessions and vault for repeated work, then suggests skills, mods and agents you don't have yet.</p><button class="btn go" onclick="S.radar=true;render();toast('Scanned 34 sessions')">Scan now</button>`,
+};
+
+/* ── channel data ── */
+const W = 240;
+const CH = {
+  act:{buf:[], gen:t=>beat(t)},
+  ctx:{buf:[], gen:t=>S.ctx/100*.8+.08+Math.sin(t/18)*.008},
+  rate:{buf:[], gen:t=>.46+Math.sin(t/40)*.03},
+  cost:{buf:[], gen:t=>costAt(t)},
+  cpu:{buf:[], gen:()=>.6+Math.random()*.35},
+  mem:{buf:[], gen:t=>.64+Math.sin(t/30)*.04},
+  disk:{buf:[], gen:()=>.71},
+  bat:{buf:[], gen:t=>.54-t/40000},
+};
+let nextBeat = 30;
+let costTarget = 0, costNow = 0;
+function costAt(t){ // cumulative spend: steps up on each call, eased so the step reads as a ramp
+  if (t % 45 === 0) costTarget += .01 + Math.random()*.03;
+  costNow += (costTarget - costNow) * .06;
+  return costNow;
+}
+const gauss = (x, mu, sd) => Math.exp(-((x-mu)**2)/(2*sd*sd));
+function beat(t){ // one PQRST complex per tool call, built from Gaussians so it stays smooth
+  const p = t - nextBeat;
+  if (p > 30) nextBeat = t + 40 + Math.random()*60;
+  const base = .3 + Math.sin(t/55)*.012;
+  if (p < 0 || p > 30) return base;
+  return base + .07*gauss(p,5,1.8) - .06*gauss(p,10.2,.7) + .56*gauss(p,11.6,.8) - .14*gauss(p,13,.8) + .12*gauss(p,21,2.6);
+}
+let tick = 0, cursor = 0;
+for (const k in CH) CH[k].buf = Array.from({length:W},(_, i)=>CH[k].gen(i));
+tick = W; // keep the heartbeat scheduler monotonic after the prefill
+
+function draw(){
+  tick++;
+  cursor = (cursor + 1) % W;
+  for (const k in CH) CH[k].buf[cursor] = CH[k].gen(tick);
+  if (tick % 60 === 0 && Math.random() < .6) { S.tools++; $('#v-act').textContent = S.tools; }
+  document.querySelectorAll('.meter canvas[data-ch]').forEach(cv=>{
+    const k = cv.dataset.ch, b = CH[k].buf;
+    const r = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w) return;
+    if (cv.width !== w*r) { cv.width = w*r; cv.height = h*r; }
+    const g = cv.getContext('2d'); g.setTransform(r,0,0,r,0,0); g.clearRect(0,0,w,h);
+    const color = getComputedStyle(cv.parentElement).getPropertyValue('--c').trim() || '#3ddc97';
+    const sx = w / W, gap = 10;
+    g.lineWidth = 1.6; g.strokeStyle = color; g.lineJoin='round';
+    g.shadowColor = color; g.shadowBlur = 6;
+    g.beginPath();
+    let pen = false;
+    for (let i=0;i<W;i++){
+      const ahead = (i - cursor + W) % W;
+      if (ahead > 0 && ahead < gap) { pen = false; continue; } // sweep-erase gap
+      const x = i*sx, y = h - b[i]*h;
+      if (!pen || i===0) { g.moveTo(x,y); pen = true; } else g.lineTo(x,y);
+    }
+    g.stroke();
+    g.shadowBlur = 0; g.fillStyle = color;
+    g.beginPath(); g.arc(cursor*sx, h - b[cursor]*h, 2.2, 0, 7); g.fill();
+  });
+  if (S.surface==='term' && tick % 4 === 0) drawSparks();
+}
+/* ── vitals trace: phosphor persistence ── */
+const hexA = (hex, a) => { const n = parseInt(hex.replace('#',''),16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; };
+const ERASE = 14; // samples blanked ahead of the write head
+function smoothPath(g, pts){ // quadratic curve through midpoints: continuous tangents, no overshoot
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (let i=1;i<pts.length-1;i++){
+    const [x,y] = pts[i], [nx,ny] = pts[i+1];
+    g.quadraticCurveTo(x, y, (x+nx)/2, (y+ny)/2);
+  }
+  const last = pts[pts.length-1]; g.lineTo(last[0], last[1]);
+}
+function drawVital(cv, phase){
+  const b = CH[cv.dataset.ch].buf;
+  const r = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!w) return;
+  if (cv.width !== w*r) { cv.width = w*r; cv.height = h*r; }
+  const g = cv.getContext('2d'); g.setTransform(r,0,0,r,0,0); g.clearRect(0,0,w,h);
+  const color = getComputedStyle(cv.parentElement).getPropertyValue('--c').trim() || '#3ddc97';
+  // auto-gain like a bedside monitor: slow signals fill the channel; the heartbeat keeps a fixed scale
+  const isFixed = cv.dataset.ch === 'act';
+  let lo = Infinity, hi = -Infinity;
+  for (const v of b) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const mid = (lo + hi) / 2, span = Math.max(.04, hi - lo) * 1.35;
+  const gain = cv._gain || (cv._gain = { lo: mid - span/2, hi: mid + span/2 });
+  gain.lo += (mid - span/2 - gain.lo) * .06; gain.hi += (mid + span/2 - gain.hi) * .06;
+  const norm = v => isFixed ? v : (v - gain.lo) / (gain.hi - gain.lo);
+  const sx = w / W, pad = 5, yOf = v => pad + (1 - norm(v)) * (h - pad*2);
+  const ageAlpha = age => .12 + .88 * Math.pow(1 - age / W, 1.6);
+
+  // two runs either side of the erase gap: [0..cursor] is newest, [cursor+ERASE..W) is oldest
+  const runs = [];
+  if (cursor > 1) runs.push({ from:0, to:cursor });
+  if (cursor + ERASE < W - 2) runs.push({ from:cursor + ERASE, to:W - 1 });
+
+  for (const run of runs){
+    const pts = [];
+    for (let i=run.from;i<=run.to;i++) pts.push([i*sx, yOf(b[i])]);
+    if (run.to === cursor) pts.push([(cursor + phase)*sx, yOf(b[cursor])]); // head glides between samples
+    const x0 = pts[0][0], x1 = pts[pts.length-1][0];
+    const a0 = ageAlpha((cursor - run.from + W) % W), a1 = ageAlpha((cursor - run.to + W) % W);
+
+    // glow fill: horizontal age fade, vertical fade toward the floor
+    const fade = g.createLinearGradient(x0, 0, x1, 0);
+    fade.addColorStop(0, hexA(color, .16*a0)); fade.addColorStop(1, hexA(color, .16*a1));
+    g.save();
+    g.beginPath(); smoothPath(g, pts); g.lineTo(x1, h); g.lineTo(x0, h); g.closePath();
+    g.fillStyle = fade; g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    const floor = g.createLinearGradient(0, 0, 0, h);
+    floor.addColorStop(0, 'rgba(0,0,0,0)'); floor.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = floor; g.fillRect(x0, 0, x1 - x0, h);
+    g.restore();
+
+    // the trace itself
+    const ink = g.createLinearGradient(x0, 0, x1, 0);
+    ink.addColorStop(0, hexA(color, a0)); ink.addColorStop(1, hexA(color, a1));
+    g.save();
+    g.beginPath(); smoothPath(g, pts);
+    g.lineWidth = 1.75; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = ink; g.shadowColor = hexA(color, .55); g.shadowBlur = 7;
+    g.stroke();
+    g.restore();
+  }
+
+  // dotted midline, drawn under nothing loud
+  g.save(); g.setLineDash([1, 5]); g.strokeStyle = 'rgba(160,190,230,.10)'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h/2 + .5); g.lineTo(w, h/2 + .5); g.stroke(); g.restore();
+
+  // write head: soft scan line, halo, bright core
+  const hx = (cursor + phase) * sx, hy = yOf(b[cursor]);
+  const scan = g.createLinearGradient(0, 0, 0, h);
+  scan.addColorStop(0, hexA(color, 0)); scan.addColorStop(.5, hexA(color, .18)); scan.addColorStop(1, hexA(color, 0));
+  g.fillStyle = scan; g.fillRect(hx - .5, 0, 1, h);
+  const halo = g.createRadialGradient(hx, hy, 0, hx, hy, 8);
+  halo.addColorStop(0, hexA(color, .45)); halo.addColorStop(1, hexA(color, 0));
+  g.fillStyle = halo; g.beginPath(); g.arc(hx, hy, 8, 0, Math.PI*2); g.fill();
+  g.fillStyle = '#f4fbff'; g.beginPath(); g.arc(hx, hy, 1.6, 0, Math.PI*2); g.fill();
+}
+function drawVitals(phase){ document.querySelectorAll('.ch canvas[data-ch]').forEach(cv=>drawVital(cv, phase)); }
+
+const BR = '▁▂▃▄▅▆▇█';
+function drawSparks(){
+  document.querySelectorAll('[data-sp]').forEach(el=>{
+    const b = CH[el.dataset.sp].buf, n = 28, out = [];
+    const win = Array.from({length:n},(_, i)=>b[(cursor - n + 1 + i + W) % W]);
+    const lo = Math.min(...win) - .05, span = Math.max(.15, Math.max(...win) - lo); // stretch so flat-ish signals still read
+    for (const v of win) out.push(BR[Math.max(0,Math.min(7,Math.round((v-lo)/span*7)))]);
+    el.textContent = out.join('');
+  });
+}
+
+/* ── state + render ── */
+function bump(d){ S.ctx = Math.max(18, Math.min(94, S.ctx + d)); renderRail(); }
+function setGate(g){ S.gate = g; render(); toast(g==='open'?'Approved, edits unlocked':'Back to brainstorm, edits locked'); }
+function openPane(p){ S.paneOpen = p; render(); }
+function closePane(){ S.paneOpen = null; render(); }
+function openCompanion(){ S.companion = !S.companion; render(); toast(S.companion?'Companion opened in the browser pane':'Companion closed'); }
+
+function renderRail(){
+  $('#v-ctx').textContent = S.ctx;
+  $('#v-tok').textContent = Math.round(S.ctx*2)+'k';
+  const alarm = S.ctx >= 80;
+  $('#ch-ctx').classList.toggle('alarm', alarm);
+  $('#chips').innerHTML =
+    `<span class="state ${S.gate==='locked'?'lock':'ok'}"><i></i>${S.gate==='locked'?'Edits locked':'Edits open'}</span>`+
+    `<span class="state warn" style="color:#e9a35b;background:rgba(233,163,91,.12)"><i></i>Caveman ultra</span>`+
+    (alarm?`<span class="state" style="color:var(--alarm);background:rgba(255,90,95,.12)"><i></i>Context critical</span>`:'');
+  $('#railFoot').innerHTML = alarm
+    ? `<button class="btn stop" onclick="bump(-100);toast('/compact sent')">Compact now</button><button class="btn" onclick="toast('Alarm silenced for 10 min')">Silence</button>`
+    : `<button class="btn" onclick="toast('Opens the command palette')">Palette</button><button class="btn ${S.companion?'info':''}" onclick="openCompanion()">Companion</button>`;
+}
+
+function render(){
+  const m = MODS[S.mod];
+  $('#modbar').innerHTML = Object.entries(MODS).map(([k,v])=>`<button aria-pressed="${k===S.mod}" data-mod="${k}">${v.label}</button>`).join('');
+  $('#shell').classList.toggle('term', S.surface==='term');
+  $('#wtitle').textContent = (S.surface==='term'?'claude in zsh':'Claude, Code tab') + ' / ' + m.title;
+  $('#transcript').innerHTML = m.chat() + `<div class="grow"></div><div class="composer"><span>Reply to Claude</span></div>`;
+  const pane = S.paneOpen;
+  $('#pane').classList.toggle('open', !!pane && !S.companion);
+  if (pane) { $('#paneTitle').textContent = MODS[pane].label; $('#paneBody').innerHTML = PANES[pane](); }
+  $('#companion').classList.toggle('open', S.companion);
+  $('#dock').innerHTML = ['gate','plan','ledger','mac','brain','radar','comp','hud'].map(k=>
+    `<button aria-pressed="${k==='comp'?S.companion:pane===k}" data-dock="${k}">${ICON[k]}${MODS[k].label.split(' ')[0]}</button>`).join('');
+  $('#notes').innerHTML = `<div class="note">${m.notes}</div>
+    <div class="note"><h2>Repo</h2><ul><li>Lives in <code>dotclaude/mods/</code>, one folder per mod.</li><li>Install one: <code>/plugin install dotclaude@dotclaude</code></li><li><code>mods/INSTALL.md</code> tells Claude how to install them all.</li></ul></div>
+    <div class="note"><h2>Surfaces</h2><ul><li><b>Desktop:</b> traces drawn as images. To verify on this build.</li><li><b>Terminal:</b> traces as block sparklines. Side panes need a terminal at least 144 columns wide when they open on their own.</li></ul></div>`;
+  renderRail();
+  if (S.surface==='term') drawSparks();
+}
+
+document.addEventListener('click', e=>{
+  const mod = e.target.closest('[data-mod]');
+  if (mod){ S.mod = mod.dataset.mod; S.paneOpen = MODS[S.mod].pane; if (S.mod!=='comp') S.companion=false; render(); return; }
+  const d = e.target.closest('[data-dock]');
+  if (d){ const k = d.dataset.dock; if (k==='comp') return openCompanion(); if (k==='hud'){ S.paneOpen=null; render(); return; } S.companion=false; S.paneOpen = S.paneOpen===k?null:k; render(); return; }
+  const s = e.target.closest('[data-surface]');
+  if (s){ S.surface = s.dataset.surface; document.querySelectorAll('[data-surface]').forEach(b=>b.setAttribute('aria-pressed', b===s)); render(); }
+});
+
+// live clock + countdown
+let resetSec = 72*60, ageMin = 42;
+setInterval(()=>{
+  resetSec = Math.max(0, resetSec-1);
+  const h = Math.floor(resetSec/3600), mm = String(Math.floor(resetSec%3600/60)).padStart(2,'0'), ss = String(resetSec%60).padStart(2,'0');
+  $('#v-reset').textContent = `${h}:${mm}:${ss}`;
+  const d = new Date(); $('#clock').textContent = d.toTimeString().slice(0,5);
+}, 1000);
+
+render();
+const STEP = 33; // ms per sample, unchanged; the vitals redraw every frame and interpolate between samples
+if (reduceMotion) { for (let i=0;i<W;i++) draw(); drawVitals(0); }
+else {
+  let last = performance.now();
+  (function loop(now){
+    if (now - last > 1000) last = now - STEP; // tab was hidden: skip the backlog instead of replaying it
+    while (now - last >= STEP) { draw(); last += STEP; }
+    drawVitals(Math.min(1, (now - last) / STEP));
+    requestAnimationFrame(loop);
+  })(last);
+}
+</script>
+</body>
+</html>

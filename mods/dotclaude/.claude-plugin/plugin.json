@@ -1,0 +1,47 @@
+{
+  "name": "dotclaude",
+  "version": "0.2.0",
+  "description": "A workspace pane for Claude Code: vitals rail, edit gate (blocks Edit, Write, NotebookEdit and MultiEdit until you approve; not Bash or MCP tools), plan review, ledger, companion, Mac monitor, notes vault, radar, Git and crew.",
+  "author": {
+    "name": "Carlo Arnone"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "vaultPath": {
+      "type": "string",
+      "title": "Notes vault",
+      "description": "Folder of your Markdown notes (Obsidian vault). ~ is your home folder; absolute paths work too.",
+      "default": "~/Notes"
+    },
+    "vaultName": {
+      "type": "string",
+      "title": "Vault name",
+      "description": "The vault's name in Obsidian, used for obsidian:// links.",
+      "default": "Notes"
+    },
+    "conventionsSkill": {
+      "type": "string",
+      "title": "Conventions skill",
+      "description": "Name of a skill under <claude dir>/skills/ whose SKILL.md holds your vault's note conventions; the scribe follows it when present, else built-in conventions.",
+      "default": "notes-conventions"
+    },
+    "approvalWords": {
+      "type": "string",
+      "title": "Approval words",
+      "description": "Comma-separated words or phrases that unlock edits when your message starts with one of them (or is exactly one). Case-insensitive, except a word written in capitals (GO) matches only in capitals.",
+      "default": "approved, go ahead, proceed, lgtm, ship it, let's do it, sounds good, GO"
+    },
+    "lockPhrases": {
+      "type": "string",
+      "title": "Lock phrases",
+      "description": "Comma-separated words or phrases that lock edits again. Locking wins when a prompt holds both.",
+      "default": "back to brainstorm, wait, stop"
+    },
+    "companionPort": {
+      "type": "number",
+      "title": "Companion port",
+      "description": "Port of the companion's local server on 127.0.0.1.",
+      "default": 4747
+    }
+  }
+}

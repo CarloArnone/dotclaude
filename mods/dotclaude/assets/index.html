@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="companion-shell">
+<title>Companion</title>
+<style>
+:root{
+  --page:#eef1f5;
+  --bar:#e1e6ed;
+  --rule:#cfd6df;
+  --text:#1a2433;
+  --muted:#4a5a70;
+  --faint:#5a6a80;
+  --spo2:#1d8fb8;
+  --num:'Barlow Condensed','Avenir Next Condensed','Arial Narrow',sans-serif;
+  --ui:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;background:var(--page);color:var(--text);font:14px/1.5 var(--ui);-webkit-font-smoothing:antialiased}
+.url{padding:8px 12px;font:11.5px var(--mono);color:var(--faint);background:var(--bar);border-bottom:1px solid var(--rule)}
+.page{flex:1;min-height:0;padding:22px;display:flex;flex-direction:column;gap:14px}
+h3{margin:0;font:600 24px var(--num)}
+.empty{margin:0;color:var(--muted);font-size:13px;max-width:52ch;text-wrap:pretty}
+iframe{flex:1;min-height:320px;width:100%;border:1px solid var(--rule);border-radius:10px;background:#fff}
+.earlier{display:flex;flex-direction:column;gap:6px}
+.earlier h4{margin:0;font:600 14px var(--num);letter-spacing:.02em;color:var(--muted)}
+.earlier ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+.earlier button{border:1px solid var(--rule);background:var(--bar);color:var(--text);border-radius:8px;padding:4px 10px;font:12.5px var(--ui);cursor:pointer}
+.earlier button[aria-pressed="true"]{border-color:var(--spo2);color:var(--spo2)}
+.earlier time{color:var(--faint);font:11px var(--mono);margin-left:6px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="url">127.0.0.1:4747 / companion</div>
+<main class="page">
+  <h3 id="title">Companion</h3>
+  <p class="empty" id="empty">When a picture beats text (diagrams, plans, timelines, charts), Claude renders it here instead of the chat.</p>
+  <iframe id="view" title="Companion view" sandbox="allow-scripts" hidden></iframe>
+  <section class="earlier" id="earlier" hidden>
+    <h4>Earlier views</h4>
+    <ul id="list"></ul>
+  </section>
+</main>
+<script>
+const POLL_MS = 1500
+const title = document.getElementById('title')
+const empty = document.getElementById('empty')
+const frame = document.getElementById('view')
+const earlier = document.getElementById('earlier')
+const list = document.getElementById('list')
+
+// A srcdoc document inherits this page's policy; this one, enforced on top of it, keeps a
+// view from making any request of its own, as the server's header does for a view opened alone.
+const VIEW_POLICY = `<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">`
+
+let newestKey = ''
+let shownSlug = ''
+
+function viewUrl(view) {
+  // createdAt busts the browser cache when a slug is shown again with new content.
+  return `views/${encodeURIComponent(view.slug)}.html?v=${view.createdAt}`
+}
+
+/** The view's page with the policy first, after its doctype so it keeps standards mode. */
+function withViewPolicy(html) {
+  return html.replace(/^(\s*<!doctype[^>]*>)?/i, prefix => prefix + VIEW_POLICY)
+}
+
+// srcdoc, not src: embedding browsers such as the IDE's preview pane block framed page loads,
+// while a srcdoc frame renders everywhere; the sandbox keeps it an opaque origin either way.
+async function show(view) {
+  shownSlug = view.slug
+  title.textContent = view.title
+  const response = await fetch(viewUrl(view), { cache: 'no-store' })
+  if (!response.ok) throw new Error(`view ${view.slug}: HTTP ${response.status}`)
+  const html = await response.text()
+  if (shownSlug !== view.slug) return
+  frame.srcdoc = withViewPolicy(html)
+  frame.hidden = false
+  empty.hidden = true
+}
+
+function timeOf(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function renderList(views) {
+  list.replaceChildren(...views.slice().reverse().map(view => {
+    const item = document.createElement('li')
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = view.title
+    button.setAttribute('aria-pressed', String(view.slug === shownSlug))
+    const time = document.createElement('time')
+    time.textContent = timeOf(view.createdAt)
+    button.append(time)
+    button.addEventListener('click', () => {
+      show(view).catch(error => console.warn('companion: view unreachable', error))
+      renderList(views)
+    })
+    item.append(button)
+    return item
+  }))
+  earlier.hidden = views.length < 2
+}
+
+async function poll() {
+  try {
+    const response = await fetch('views/manifest.json', { cache: 'no-store' })
+    if (!response.ok) return
+    const views = await response.json()
+    const newest = views[views.length - 1]
+    if (!newest) return
+    const key = `${newest.slug}@${newest.createdAt}`
+    if (key !== newestKey) {
+      await show(newest)
+      newestKey = key
+    }
+    renderList(views)
+  } catch (error) {
+    // The server stops when the companion closes; the page keeps its last view.
+    console.warn('companion: manifest or view unreachable', error)
+  }
+}
+
+poll()
+setInterval(poll, POLL_MS)
+</script>
+</body>
+</html>

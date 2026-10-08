@@ -1,0 +1,5 @@
+# Laid by Claude Code beside a plugin loaded from a folder; regenerated on every load.
+mods/*/.claude-plugin/types/
+mods/*/tsconfig.json
+.DS_Store
+node_modules/
